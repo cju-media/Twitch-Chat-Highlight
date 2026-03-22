@@ -26,7 +26,7 @@ Launch the executable corresponding to your operating system:
 1. Open a web browser to `http://localhost:3000`.
 2. Click the **Settings** icon (gear symbol).
 3. Enter your **Twitch Username**.
-4. Enter your **YouTube Channel ID** (The unique string starting with UC).
+4. Enter your **Channel name or Channel ID** (The unique string starting with UC).
 5. Click **Update & Save**. The status indicators will update once the connection is initialized.
 
 #### 3. OBS Integration
