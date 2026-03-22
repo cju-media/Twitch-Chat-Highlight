@@ -1,6 +1,6 @@
 # Stream Chat Highlight
 
-A lightweight, standalone chat featuring tool for Twitch streamers. Highlight specific chat messages on your stream with full support for Twitch, 7TV, and BTTV emotes, as well as official chatter badges.
+A lightweight, standalone chat featuring tool for Twitch streamers. Highlight specific chat messages on your stream with full support for Youtube, Twitch, 7TV, and BTTV emotes, as well as official chatter badges.
 
 ---
 
@@ -9,7 +9,7 @@ A lightweight, standalone chat featuring tool for Twitch streamers. Highlight sp
 You do not need Node.js or any programming knowledge to use this.
 
 ### 1. Launch the App
-* Double-click the `twitch-chat-display-macos` (or `.exe` on Windows).
+* Double-click the `stream-chat-display-macos` (or `.exe` on Windows).
 * A terminal window will open showing that the server is active. Keep this window open while you are streaming.
 
 ### 2. Connect to Your Channel
@@ -57,7 +57,7 @@ We use `pkg` to bundle the Node.js runtime and assets into a single file. Becaus
 
 1. **Navigate to the project folder:**
     ```bash
-    cd /path/to/Twitch-Chat-Display
+    cd /path/to/Stream-Chat-Display
     ```
 2. **Run the Build:**
     ```bash
