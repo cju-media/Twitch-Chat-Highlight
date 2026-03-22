@@ -1,4 +1,4 @@
-## README: Stream Chat Highlight
+## Stream Chat Highlight
 **Version 2**
 
 This is a lightweight, standalone application designed to display and feature chat messages from both Twitch and YouTube simultaneously. It allows streamers to select specific viewer comments to highlight on their broadcast through a clean, interactive overlay.
