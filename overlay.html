@@ -8,11 +8,11 @@
             position: absolute; bottom: 40px; right: 40px;
             background: rgba(24, 24, 27, 0.95); color: #efeff1; padding: 25px 35px;
             border-radius: 8px; max-width: 70%; font-size: 42px; line-height: 1.2;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-left: 12px solid #9147ff;
-            opacity: 0; transform: translateY(20px); transition: opacity 0.4s ease, transform 0.4s ease;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-left: 12px solid transparent;
+            opacity: 0; transform: translateY(20px); transition: opacity 0.4s ease, transform 0.4s ease, border-color 0.2s;
         }
         #highlight.visible { opacity: 1; transform: translateY(0); }
-        .badge { height: 42px; width: auto; vertical-align: middle; margin-right: 12px; border-radius: 4px; }
+        .badge { height: 42px; vertical-align: middle; margin-right: 12px; border-radius: 4px; }
         .username { font-weight: 700; margin-right: 15px; vertical-align: middle; }
         .emote { height: 1.2em; vertical-align: middle; margin: 0 5px; }
     </style>
@@ -25,7 +25,7 @@
         let globalEmoteMap = {}, globalBadgeMap = {};
         const box = document.getElementById('highlight');
 
-        socket.on('init-assets', (data) => { globalEmoteMap = data.emotes; globalBadgeMap = data.badges; });
+        socket.on('init-assets', (d) => { globalEmoteMap = d.emotes; globalBadgeMap = d.badges; });
 
         function getBadgesHtml(userBadges) {
             let html = '';
@@ -57,11 +57,12 @@
         }
 
         socket.on('show-feature', (data) => {
+            box.style.borderLeftColor = data.platform === 'twitch' ? '#9147ff' : '#ff0000';
             box.innerHTML = `${getBadgesHtml(data.badges)}<span class="username" style="color:${data.color}">${data.user}:</span><span>${parse(data.text, data.emotes)}</span>`;
             box.classList.add('visible');
         });
 
-        socket.on('clear-overlay', () => { box.classList.remove('visible'); });
+        socket.on('clear-overlay', () => box.classList.remove('visible'));
     </script>
 </body>
 </html>

@@ -3,56 +3,152 @@
 <head>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { background: #0e0e10; color: #efeff1; font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
-        .header { position: sticky; top: 0; background: #18181b; padding: 15px 20px; border-bottom: 2px solid #9147ff; z-index: 10; display: flex; align-items: center; justify-content: space-between; }
-        .channel-controls { display: flex; gap: 10px; }
-        input { background: #000; color: #fff; border: 1px solid #333; padding: 8px; border-radius: 4px; outline: none; }
-        input:focus { border-color: #9147ff; }
-        button { padding: 8px 16px; background: #9147ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .clear-btn { background: #eb0400; }
-        #chat-log { padding: 10px; }
-        .msg { padding: 10px; cursor: pointer; border-bottom: 1px solid #1f1f23; transition: background 0.1s; }
+        body { background: #0e0e10; color: #efeff1; font-family: 'Inter', sans-serif; margin: 0; padding: 0; overflow: hidden; height: 100vh; }
+        
+        .header { 
+            background: #18181b; padding: 10px 15px; border-bottom: 2px solid #9147ff; 
+            display: flex; align-items: center; justify-content: space-between; 
+            height: 55px; box-sizing: border-box;
+        }
+        .header-left { display: flex; gap: 10px; align-items: center; }
+        
+        button, select { 
+            padding: 8px 12px; border-radius: 4px; border: none; cursor: pointer; 
+            font-weight: bold; font-family: inherit; outline: none;
+            font-size: 11px; height: 32px; display: flex; align-items: center; justify-content: center;
+        }
+
+        select { background: #000; color: #fff; border: 1px solid #444; }
+        .btn-settings { background: #333; color: white; font-size: 13px; }
+        .btn-clear-red { background: #eb0400; color: white; }
+        .btn-clear-gray { background: #444; color: white; }
+
+        #chat-log { 
+            height: calc(100vh - 55px); overflow-y: auto; 
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }
+
+        .msg { padding: 10px; border-bottom: 1px solid #1f1f23; display: flex; align-items: center; font-size: 13px; flex-shrink: 0; }
         .msg:hover { background: #1f1f23; }
-        .username { font-weight: 700; margin-right: 8px; }
-        .badge { height: 18px; width: auto; vertical-align: middle; margin-right: 4px; border-radius: 2px; }
-        .emote { height: 24px; vertical-align: middle; margin: 0 2px; }
+        
+        #configModal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-content { background: #18181b; padding: 25px; border-radius: 8px; border: 1px solid #9147ff; width: 300px; display: flex; flex-direction: column; gap: 12px; }
+        input { background: #000; color: #fff; border: 1px solid #444; padding: 10px; border-radius: 4px; width: 100%; box-sizing: border-box; }
+        
+        .status-row { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px; color: #adadb8; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; transition: background 0.3s; }
+        .dot.online { background: #00ff00; box-shadow: 0 0 5px #00ff00; }
+        
+        /* Resume Button with Up Arrow */
+        #resume-btn { 
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); 
+            background: #9147ff; color: white; padding: 10px 20px; border-radius: 20px; 
+            display: none; z-index: 500; border: 2px solid white; font-weight: bold; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); cursor: pointer;
+        }
+
+        .platform-tag { font-size: 9px; font-weight: 800; padding: 2px 4px; border-radius: 3px; margin-right: 8px; text-transform: uppercase; color: white; }
+        .tag-twitch { background: #9147ff; }
+        .tag-youtube { background: #ff0000; }
+        .username { font-weight: 700; margin-right: 6px; }
+        .badge { height: 16px; margin-right: 4px; }
+        .emote { height: 22px; vertical-align: middle; }
     </style>
 </head>
 <body>
+
     <div class="header">
-        <div class="channel-controls">
-            <input id="channelInput" type="text" placeholder="Channel Name">
-            <button onclick="updateChannel()">SET</button>
+        <div class="header-left">
+            <button class="btn-settings" onclick="toggleModal(true)">⚙ Settings</button>
+            <select id="siteFilter" onchange="resumeChat()">
+                <option value="all">All Sites</option>
+                <option value="twitch">Twitch Only</option>
+                <option value="youtube">YouTube Only</option>
+            </select>
+            <button class="btn-clear-gray" onclick="clearLog()">Clear Log</button>
         </div>
-        <button class="clear-btn" onclick="socket.emit('clear-msg')">CLEAR OVERLAY</button>
+        <button class="btn-clear-red" onclick="socket.emit('clear-msg')">Clear Overlay</button>
     </div>
+
+    <div id="configModal">
+        <div class="modal-content">
+            <h2 style="margin:0; font-size:16px;">Connection Settings</h2>
+            <div>
+                <input id="twitchInput" type="text" placeholder="Twitch Name">
+                <div class="status-row">Twitch: <div id="tDot" class="dot"></div></div>
+            </div>
+            <div>
+                <input id="youtubeInput" type="text" placeholder="YouTube ID (UC...)">
+                <div class="status-row">YouTube: <div id="yDot" class="dot"></div></div>
+            </div>
+            <button style="background:#9147ff; color:white; width:100%; margin-top:10px;" onclick="saveAll()">Update & Save</button>
+            <button style="background:transparent; color:#adadb8;" onclick="toggleModal(false)">Cancel</button>
+            <div id="version-display" style="font-size: 10px; color: #555; text-align: center; margin-top: 5px; border-top: 1px solid #333; padding-top: 10px;">Build Date: Loading...</div>
+        </div>
+    </div>
+
+    <div id="resume-btn" onclick="resumeChat()">⬆ Resume Live Chat</div>
+    
     <div id="chat-log"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        const chatLog = document.getElementById('chat-log');
+        const resumeBtn = document.getElementById('resume-btn');
+        let isPaused = false;
         let globalEmoteMap = {}, globalBadgeMap = {};
 
-        const channelInput = document.getElementById('channelInput');
+        function toggleModal(s) { document.getElementById('configModal').style.display = s ? 'flex' : 'none'; }
+        function clearLog() { chatLog.innerHTML = ''; }
+        
+        function saveAll() {
+            socket.emit('update-channels', { 
+                twitch: document.getElementById('twitchInput').value, 
+                youtube: document.getElementById('youtubeInput').value 
+            });
+            clearLog(); toggleModal(false); resumeChat();
+        }
 
-        // Added: Press Enter to Update
-        channelInput.addEventListener("keypress", (event) => {
-            if (event.key === "Enter") {
-                updateChannel();
+        chatLog.addEventListener('scroll', () => {
+            if (chatLog.scrollTop > 15) { 
+                isPaused = true; 
+                resumeBtn.style.display = 'block'; 
+            } else { 
+                isPaused = false; 
+                resumeBtn.style.display = 'none'; 
             }
         });
 
-        socket.on('current-channel', (name) => { channelInput.value = name; });
-        socket.on('init-assets', (data) => { globalEmoteMap = data.emotes; globalBadgeMap = data.badges; });
-
-        function updateChannel() {
-            const name = channelInput.value.trim();
-            if (name) { 
-                socket.emit('change-channel', name); 
-                document.getElementById('chat-log').innerHTML = ''; 
-                channelInput.blur(); // Remove focus after updating
-            }
+        function resumeChat() { 
+            chatLog.scrollTo({ top: 0, behavior: 'smooth' }); 
+            isPaused = false; 
+            resumeBtn.style.display = 'none'; 
         }
+
+        socket.on('status-update', (d) => {
+            const dot = document.getElementById(d.platform === 'twitch' ? 'tDot' : 'yDot');
+            if (dot) dot.className = d.connected ? 'dot online' : 'dot';
+        });
+
+        socket.on('current-config', (c) => { 
+            document.getElementById('twitchInput').value = c.twitch; 
+            document.getElementById('youtubeInput').value = c.youtube; 
+            if (c.buildDate) document.getElementById('version-display').innerText = `Build Date: ${c.buildDate}`;
+        });
+
+        socket.on('init-assets', (d) => { globalEmoteMap = d.emotes; globalBadgeMap = d.badges; });
+
+        socket.on('new-message', (data) => {
+            if (document.getElementById('siteFilter').value !== 'all' && data.platform !== document.getElementById('siteFilter').value) return;
+            if (isPaused) return;
+            const div = document.createElement('div');
+            div.className = 'msg';
+            div.innerHTML = `<span class="platform-tag tag-${data.platform}">${data.platform}</span>${getBadgesHtml(data.badges)}<span class="username" style="color:${data.color}">${data.user}:</span><span>${parse(data.text, data.emotes)}</span>`;
+            div.onclick = () => socket.emit('feature-msg', data);
+            chatLog.prepend(div);
+            if (chatLog.children.length > 100) chatLog.removeChild(chatLog.lastChild);
+        });
 
         function getBadgesHtml(userBadges) {
             let html = '';
@@ -82,14 +178,6 @@
                 return word.replace(/&/g, "&amp;").replace(/</g, "&lt;");
             }).join(' ');
         }
-
-        socket.on('new-message', (data) => {
-            const div = document.createElement('div');
-            div.className = 'msg';
-            div.innerHTML = `${getBadgesHtml(data.badges)}<span class="username" style="color:${data.color}">${data.user}:</span><span>${parse(data.text, data.emotes)}</span>`;
-            div.onclick = () => socket.emit('feature-msg', data);
-            document.getElementById('chat-log').prepend(div);
-        });
     </script>
 </body>
 </html>

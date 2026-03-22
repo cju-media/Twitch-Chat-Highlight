@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const tmi = require('tmi.js');
+const { LiveChat } = require('youtube-chat');
 const path = require('path');
 const fs = require('fs');
 
@@ -9,106 +10,137 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+const BUILD_DATE = "March 22, 2026";
+const PORT = 3000;
 const configPath = path.join(process.cwd(), 'config.txt');
-let CHANNEL_NAME = loadChannel();
-let emoteMap = {};
-let badgeMap = {};
-let client = null;
 
-function saveChannel(name) {
-    try { fs.writeFileSync(configPath, name, 'utf8'); } catch (e) {}
+let TWITCH_CHANNEL = 'twitch', YOUTUBE_ID = '', YOUTUBE_DISPLAY_NAME = '';
+let emoteMap = {}, badgeMap = {}, tmiClient = null, ytChat = null;
+
+// ERROR LOGGING
+process.on('unhandledRejection', (reason) => console.error('LOG: YouTube rejected the request. Is the stream live?'));
+
+function saveConfig() {
+    try { fs.writeFileSync(configPath, JSON.stringify({ twitch: TWITCH_CHANNEL, youtube: YOUTUBE_ID, youtubeName: YOUTUBE_DISPLAY_NAME }), 'utf8'); } catch (e) {}
 }
 
-function loadChannel() {
-    try { if (fs.existsSync(configPath)) return fs.readFileSync(configPath, 'utf8').trim(); } catch (e) { }
-    return 'twitch'; 
+function loadConfig() {
+    try {
+        if (fs.existsSync(configPath)) {
+            const d = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            TWITCH_CHANNEL = d.twitch || 'twitch';
+            YOUTUBE_ID = d.youtube || '';
+            YOUTUBE_DISPLAY_NAME = d.youtubeName || d.youtube || '';
+        }
+    } catch (e) {}
+}
+
+async function getYoutubeId(input) {
+    if (!input) return null;
+    const clean = input.trim();
+    // If it's already a UC ID, return it
+    if (clean.startsWith('UC') && clean.length === 24) return { id: clean, name: clean };
+    
+    try {
+        const url = clean.startsWith('http') ? clean : (clean.startsWith('@') ? `https://www.youtube.com/${clean}` : `https://www.youtube.com/@${clean}`);
+        console.log(`🔍 Resolving YouTube ID for: ${url}`);
+        const res = await fetch(url);
+        const html = await res.text();
+        const idMatch = html.match(/"externalId":"(UC[a-zA-Z0-9_-]{22})"/);
+        const nameMatch = html.match(/"name":"([^"]+)"/);
+        
+        if (!idMatch) console.log("⚠️ Could not find UC ID in the page HTML.");
+        return idMatch ? { id: idMatch[1], name: nameMatch ? nameMatch[1] : clean } : null;
+    } catch (e) { 
+        console.error("❌ Resolution error:", e.message);
+        return null; 
+    }
+}
+
+function connectYouTube(id) {
+    if (ytChat) try { ytChat.stop(); } catch(e) {}
+    if (!id) return io.emit('status-update', { platform: 'youtube', connected: false });
+
+    console.log(`📡 Connecting to Live Chat for ID: ${id}`);
+    try {
+        ytChat = new LiveChat({ channelId: id });
+        
+        ytChat.on("chat", (item) => {
+            const txt = item.message.map(m => m.text || '').join('');
+            io.emit('new-message', { platform: 'youtube', user: item.author.name, color: '#ff0000', badges: {}, text: txt });
+        });
+
+        ytChat.on("error", (err) => {
+            console.error(`❌ YT Library Error: ${err.message}`);
+            io.emit('status-update', { platform: 'youtube', connected: false });
+        });
+        
+        ytChat.start()
+            .then(() => {
+                console.log("✅ YouTube Connected!");
+                io.emit('status-update', { platform: 'youtube', connected: true });
+            })
+            .catch((err) => {
+                console.error(`❌ YT Start Failed: ${err.message}`);
+                io.emit('status-update', { platform: 'youtube', connected: false });
+            });
+    } catch (e) { 
+        console.error("❌ YT Setup Error:", e.message);
+        io.emit('status-update', { platform: 'youtube', connected: false }); 
+    }
+}
+
+function connectTwitch(channel) {
+    if (tmiClient) try { tmiClient.disconnect(); } catch(e) {}
+    tmiClient = new tmi.Client({ connection: { reconnect: true, secure: true }, channels: [channel] });
+    tmiClient.on('message', (chan, tags, msg, self) => {
+        if (!self) io.emit('new-message', { platform: 'twitch', user: tags['display-name'], color: tags.color || '#9147ff', badges: tags.badges || {}, emotes: tags.emotes, text: msg });
+    });
+    tmiClient.connect().then(() => {
+        console.log("✅ Twitch Connected!");
+        io.emit('status-update', { platform: 'twitch', connected: true });
+    });
+    loadAssets(channel);
 }
 
 async function loadAssets(channel) {
     try {
-        const gBadgeRes = await fetch('https://badges.twitch.tv/v1/badges/global/display');
-        const gBadgeData = await gBadgeRes.json();
-        const cBadgeRes = await fetch(`https://badges.twitch.tv/v1/badges/channels/${channel}/display`).catch(() => null);
-        let cBadgeData = { badge_sets: {} };
-        if (cBadgeRes && cBadgeRes.ok) cBadgeData = await cBadgeRes.json();
-
-        badgeMap = { ...gBadgeData.badge_sets, ...cBadgeData.badge_sets };
-
+        const g = await (await fetch('https://badges.twitch.tv/v1/badges/global/display')).json();
+        const cRes = await fetch(`https://badges.twitch.tv/v1/badges/channels/${channel}/display`).catch(() => null);
+        badgeMap = { ...g.badge_sets, ...(cRes?.ok ? (await cRes.json()).badge_sets : {}) };
         emoteMap = {};
-        const seventv = await fetch(`https://7tv.io/v3/users/twitch/${channel}`).catch(() => null);
-        if (seventv?.ok) {
-            const data = await seventv.json();
-            data.emote_set?.emotes.forEach(e => {
-                emoteMap[e.name] = `https://cdn.7tv.app/emote/${e.id}/3x.webp`;
-            });
-        }
-        const bttv = await fetch('https://api.betterttv.net/3/cached/emotes/global').catch(() => null);
-        if (bttv?.ok) {
-            const data = await bttv.json();
-            data.forEach(e => emoteMap[e.code] = `https://cdn.betterttv.net/emote/${e.id}/3x`);
-        }
-
+        const s = await fetch(`https://7tv.io/v3/users/twitch/${channel}`).catch(() => null);
+        if (s?.ok) (await s.json()).emote_set?.emotes.forEach(e => { emoteMap[e.name] = `https://cdn.7tv.app/emote/${e.id}/3x.webp`; });
         io.emit('init-assets', { emotes: emoteMap, badges: badgeMap });
-    } catch (e) { console.error("Asset fetch error:", e); }
+    } catch (e) {}
 }
 
-function connectToTwitch(channel) {
-    if (client) client.disconnect();
-    client = new tmi.Client({ connection: { reconnect: true, secure: true }, channels: [channel] });
-    client.on('message', (chan, tags, message, self) => {
-        if (self) return;
-        io.emit('new-message', {
-            user: tags['display-name'],
-            color: tags.color || '#9147ff',
-            emotes: tags.emotes,
-            badges: tags.badges || {},
-            text: message
-        });
-    });
-    client.connect().then(() => console.log(`🚀 Connected: ${channel}`));
-    loadAssets(channel);
-}
-
-loadAssets(CHANNEL_NAME).then(() => connectToTwitch(CHANNEL_NAME));
+loadConfig();
+connectTwitch(TWITCH_CHANNEL);
+connectYouTube(YOUTUBE_ID);
 
 io.on('connection', (socket) => {
-    socket.emit('current-channel', CHANNEL_NAME);
     socket.emit('init-assets', { emotes: emoteMap, badges: badgeMap });
-    socket.on('feature-msg', (data) => io.emit('show-feature', data));
+    socket.emit('current-config', { twitch: TWITCH_CHANNEL, youtube: YOUTUBE_DISPLAY_NAME, buildDate: BUILD_DATE });
+    socket.emit('status-update', { platform: 'twitch', connected: tmiClient?.readyState() === 'OPEN' });
+    socket.emit('status-update', { platform: 'youtube', connected: !!ytChat });
+
+    socket.on('feature-msg', (d) => io.emit('show-feature', d));
     socket.on('clear-msg', () => io.emit('clear-overlay'));
-    socket.on('change-channel', (name) => {
-        CHANNEL_NAME = name.toLowerCase().trim();
-        saveChannel(CHANNEL_NAME);
-        connectToTwitch(CHANNEL_NAME);
+    socket.on('update-channels', async (d) => {
+        TWITCH_CHANNEL = d.twitch.toLowerCase().trim();
+        const yt = await getYoutubeId(d.youtube);
+        if (yt) { 
+            YOUTUBE_ID = yt.id; 
+            YOUTUBE_DISPLAY_NAME = yt.name; 
+            socket.emit('name-update', { youtube: yt.name }); 
+        } else { 
+            YOUTUBE_DISPLAY_NAME = d.youtube.trim(); 
+        }
+        saveConfig(); connectTwitch(TWITCH_CHANNEL); connectYouTube(YOUTUBE_ID);
     });
 });
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
-app.get('/overlay', (req, res) => res.sendFile(path.join(__dirname, 'overlay.html')));
-
-const PORT = 3000;
-
-server.listen(PORT, () => {
-    // Clear the console for a clean "App" feel
-    console.clear(); 
-    
-    console.log(`
-**************************************************
-  TWITCH CHAT HIGHLIGHTER
-**************************************************
-
-  1. DASHBOARD (Control Panel):
-     http://localhost:${PORT}
-     -> Add this as a "Custom Browser Dock" in OBS.
-
-  2. OVERLAY (Stream View):
-     http://localhost:${PORT}/overlay
-     -> Add this as a "Browser Source" in OBS.
-     -> Recommended Size: 1920 x 1080
-
-  CURRENT CHANNEL: ${CHANNEL_NAME.toUpperCase()}
-  (Change this anytime in the Dashboard)
-
-**************************************************
-    `);
-});
+app.get('/', (r, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
+app.get('/overlay', (r, res) => res.sendFile(path.join(__dirname, 'overlay.html')));
+server.listen(PORT, () => console.log(`Dashboard running on http://localhost:${PORT}`));
