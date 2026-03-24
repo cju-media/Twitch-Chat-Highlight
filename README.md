@@ -5,6 +5,12 @@ This is a lightweight, standalone application designed to display and feature ch
 
 ---
 
+**Install Instructions:**
+[ ![Install Video](https://github.com/user-attachments/assets/ef9baeb0-eb41-436b-b84c-8b9e70906782)](https://youtu.be/m369CLOA5P8)
+
+---
+
+
 ### New Features in this Version
 * **Multi-Platform Support**: Includes native binaries for macOS (Intel and Apple Silicon), Windows (x64), and Linux (x64).
 * **Auto-Pause Scrolling**: The dashboard automatically pauses live updates when the user scrolls down to read older messages, preventing the list from jumping.
